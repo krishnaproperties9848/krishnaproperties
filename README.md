@@ -1,3 +1,24 @@
+## Switching GitHub credentials and pushing to a new account
+
+Use these commands when you need to point this repo to a new GitHub account and re-authenticate (Windows, HTTPS):
+
+```bash
+# 1) Point remote to the desired repo
+git remote set-url origin https://github.com/krishnaproperties9848/krishnaproperties.git
+git remote -v  # verify
+
+# 2) Inspect and remove cached GitHub credentials
+cmdkey /list | findstr github
+cmdkey /delete:git:https://github.com
+
+# 3) Push and sign in with the intended account when prompted
+git push -u origin main
+```
+
+When the browser/device prompt appears, sign in as the intended GitHub user (e.g., **krishnaproperties9848**).
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
