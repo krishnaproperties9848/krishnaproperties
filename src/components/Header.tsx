@@ -71,10 +71,22 @@ export default function Header() {
                         About
                     </Link>
                     <Link
-                        href="/#services"
+                        href="/services"
                         className="text-sm font-medium text-gray-200 transition-colors hover:text-gold focus-ring rounded-sm"
                     >
                         Services
+                    </Link>
+                    <Link
+                        href="/brochures"
+                        className="text-sm font-medium text-gray-200 transition-colors hover:text-gold focus-ring rounded-sm"
+                    >
+                        Brochures
+                    </Link>
+                    <Link
+                        href="/testimonials"
+                        className="text-sm font-medium text-gray-200 transition-colors hover:text-gold focus-ring rounded-sm"
+                    >
+                        Testimonials
                     </Link>
                     <Link
                         href="/insights"
@@ -156,11 +168,25 @@ export default function Header() {
                                 About
                             </Link>
                             <Link
-                                href="/#services"
+                                href="/services"
                                 className="flex h-12 items-center rounded-lg px-4 text-base font-medium text-gray-200 transition-colors hover:bg-gold/10 hover:text-gold focus-ring"
                                 onClick={() => setMobileMenuOpen(false)}
                             >
                                 Services
+                            </Link>
+                            <Link
+                                href="/brochures"
+                                className="flex h-12 items-center rounded-lg px-4 text-base font-medium text-gray-200 transition-colors hover:bg-gold/10 hover:text-gold focus-ring"
+                                onClick={() => setMobileMenuOpen(false)}
+                            >
+                                Brochures
+                            </Link>
+                            <Link
+                                href="/testimonials"
+                                className="flex h-12 items-center rounded-lg px-4 text-base font-medium text-gray-200 transition-colors hover:bg-gold/10 hover:text-gold focus-ring"
+                                onClick={() => setMobileMenuOpen(false)}
+                            >
+                                Testimonials
                             </Link>
                             <Link
                                 href="/insights"
