@@ -4,6 +4,8 @@ import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Brochure, BrochureStatus, InvestmentIntent } from "@/lib/supabase/types";
+import { extractYouTubeVideoId, googleDriveToDownloadUrl, googleDriveToViewUrl, youTubeToThumbnailUrl } from "@/lib/utils";
+import SmartImage from "@/components/SmartImage";
 import {
   Save,
   Loader2,
@@ -86,6 +88,15 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
   // Media
   const [coverImageUrl, setCoverImageUrl] = useState(brochure?.cover_image_url || "");
   const [galleryUrls, setGalleryUrls] = useState<string[]>(brochure?.gallery_urls || []);
+  const [coverGdriveLink, setCoverGdriveLink] = useState("");
+  const [galleryGdriveLink, setGalleryGdriveLink] = useState("");
+  
+  // PDF Files
+  const [files, setFiles] = useState(brochure?.files || []);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const [pdfUploadError, setPdfUploadError] = useState<string | null>(null);
+  const [pdfUploadSuccess, setPdfUploadSuccess] = useState<string | null>(null);
+  const [deletingPdfId, setDeletingPdfId] = useState<string | null>(null);
   
   // Videos
   const [videoUrl, setVideoUrl] = useState("");
@@ -196,26 +207,174 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
     setUploading(false);
   };
 
+  // Google Drive PDF link state
+  const [gdriveLink, setGdriveLink] = useState("");
+  const [gdriveFileName, setGdriveFileName] = useState("");
+
+  // Handle PDF brochure upload from local device
+  const handlePdfUpload = async (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    
+    setUploadingPdf(true);
+    setPdfUploadError(null);
+    setPdfUploadSuccess(null);
+    const supabase = createClient();
+    const uploadErrors: string[] = [];
+    let uploadedCount = 0;
+    
+    for (const file of Array.from(fileList)) {
+      if (file.type !== "application/pdf") continue;
+      
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const storagePath = `pdfs/${fileName}`;
+
+      const { error } = await supabase.storage.from("brochures").upload(storagePath, file);
+      
+      if (error) {
+        uploadErrors.push(`${file.name}: ${error.message}`);
+        continue;
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from("brochures").getPublicUrl(storagePath);
+      uploadedCount += 1;
+      setFiles((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).substring(7)}`,
+          url: publicUrl,
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          type: "pdf" as const,
+          size_bytes: file.size,
+          is_primary: prev.length === 0,
+          source: "upload" as const,
+          bucket: "brochures",
+          storage_path: storagePath,
+        },
+      ]);
+    }
+    
+    setUploadingPdf(false);
+
+    if (uploadedCount > 0) {
+      setPdfUploadSuccess(`Uploaded ${uploadedCount} PDF${uploadedCount > 1 ? "s" : ""}. Click Update to save.`);
+    }
+    if (uploadErrors.length > 0) {
+      setPdfUploadError(uploadErrors.join("\n"));
+    }
+  };
+
+  const deletePdfFile = async (index: number) => {
+    const file = files[index];
+    if (!file) return;
+
+    setPdfUploadError(null);
+    setPdfUploadSuccess(null);
+
+    // If it was uploaded to Supabase storage and we have the path, delete the object.
+    if ((file.source ?? "upload") === "upload" && file.bucket && file.storage_path) {
+      setDeletingPdfId(file.id);
+      try {
+        const supabase = createClient();
+        const { error } = await supabase.storage.from(file.bucket).remove([file.storage_path]);
+        if (error) {
+          setPdfUploadError(error.message);
+          return;
+        }
+      } finally {
+        setDeletingPdfId(null);
+      }
+    }
+
+    setFiles((prev) => prev.filter((_, idx) => idx !== index));
+    setPdfUploadSuccess("File removed. Click Update to save.");
+  };
+
+  const setCoverFromGdrive = () => {
+    if (!coverGdriveLink.trim()) return;
+    const directLink = googleDriveToViewUrl(coverGdriveLink);
+    if (!directLink) {
+      alert("Invalid Google Drive link. Please use a valid share link.");
+      return;
+    }
+
+    setCoverImageUrl(directLink);
+    setCoverGdriveLink("");
+  };
+
+  const addGalleryFromGdrive = () => {
+    if (!galleryGdriveLink.trim()) return;
+    const directLink = googleDriveToViewUrl(galleryGdriveLink);
+    if (!directLink) {
+      alert("Invalid Google Drive link. Please use a valid share link.");
+      return;
+    }
+
+    setGalleryUrls((prev) => [...prev, directLink]);
+    setGalleryGdriveLink("");
+  };
+
+  // Add Google Drive PDF link
+  const addGdriveFile = () => {
+    if (!gdriveLink.trim()) return;
+    
+    const directLink = googleDriveToDownloadUrl(gdriveLink);
+    if (!directLink) {
+      alert("Invalid Google Drive link. Please use a valid share link.");
+      return;
+    }
+    
+    const fileName = gdriveFileName.trim() || "Brochure PDF";
+    
+    setFiles((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        url: directLink,
+        name: fileName,
+        type: "pdf" as const,
+        size_bytes: null,
+        is_primary: prev.length === 0,
+        source: "gdrive" as const,
+        bucket: null,
+        storage_path: null,
+      },
+    ]);
+    
+    setGdriveLink("");
+    setGdriveFileName("");
+  };
+
   // Add YouTube video
   const addVideo = () => {
     if (!videoUrl.trim()) return;
-    
-    // Extract YouTube video ID
-    const youtubeMatch = videoUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
-    if (youtubeMatch) {
-      const videoId = youtubeMatch[1];
+
+    const videoId = extractYouTubeVideoId(videoUrl);
+    if (videoId) {
       setVideos((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           type: "youtube" as const,
           url: `https://www.youtube.com/watch?v=${videoId}`,
-          thumbnail_url: `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
+          thumbnail_url: youTubeToThumbnailUrl(videoId) || `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`,
           title: null,
         },
       ]);
       setVideoUrl("");
     }
+  };
+
+  // Format number with commas for display
+  const formatNumberWithCommas = (value: string) => {
+    const num = value.replace(/,/g, "");
+    if (!num || isNaN(Number(num))) return value;
+    return Number(num).toLocaleString("en-IN");
+  };
+
+  // Parse comma-separated number back to plain number string
+  const parseFormattedNumber = (value: string) => {
+    return value.replace(/,/g, "");
   };
 
   // Form validation errors
@@ -277,7 +436,7 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
       why_invest: whyInvest,
       cover_image_url: coverImageUrl || null,
       gallery_urls: galleryUrls,
-      files: brochure?.files || [],
+      files,
       videos,
       phone_override: null,
       whatsapp_override: null,
@@ -461,10 +620,10 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
                   <select
                     value={region}
                     onChange={(e) => setRegion(e.target.value)}
-                    className="w-full rounded-lg border border-gold/20 bg-white/5 px-4 py-3 text-white focus:border-gold focus:outline-none"
+                    className="w-full rounded-lg border border-gold/20 bg-neutral-900 px-4 py-3 text-white focus:border-gold focus:outline-none [&>option]:bg-neutral-900 [&>option]:text-white"
                   >
                     {REGIONS.map((r) => (
-                      <option key={r} value={r}>{r}</option>
+                      <option key={r} value={r} className="bg-neutral-900 text-white">{r}</option>
                     ))}
                   </select>
                 </div>
@@ -490,51 +649,53 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Budget Range (Min)</label>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Budget Range (Min) ₹</label>
                   <div className="relative">
                     <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                     <input
-                      type="number"
-                      value={budgetMin}
-                      onChange={(e) => setBudgetMin(e.target.value)}
-                      placeholder="e.g., 2000000"
+                      type="text"
+                      value={formatNumberWithCommas(budgetMin)}
+                      onChange={(e) => setBudgetMin(parseFormattedNumber(e.target.value))}
+                      placeholder="e.g., 20,00,000"
                       className="w-full rounded-lg border border-gold/20 bg-white/5 pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
                     />
                   </div>
+                  {budgetMin && <p className="text-xs text-gray-500 mt-1">= ₹{formatNumberWithCommas(budgetMin)}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Budget Range (Max)</label>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Budget Range (Max) ₹</label>
                   <div className="relative">
                     <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                     <input
-                      type="number"
-                      value={budgetMax}
-                      onChange={(e) => setBudgetMax(e.target.value)}
-                      placeholder="e.g., 10000000"
+                      type="text"
+                      value={formatNumberWithCommas(budgetMax)}
+                      onChange={(e) => setBudgetMax(parseFormattedNumber(e.target.value))}
+                      placeholder="e.g., 1,00,00,000"
                       className="w-full rounded-lg border border-gold/20 bg-white/5 pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
                     />
                   </div>
+                  {budgetMax && <p className="text-xs text-gray-500 mt-1">= ₹{formatNumberWithCommas(budgetMax)}</p>}
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Price per Sq. Yard (Min)</label>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Price per Sq. Yard (Min) ₹</label>
                   <input
-                    type="number"
-                    value={pricePerSqYardMin}
-                    onChange={(e) => setPricePerSqYardMin(e.target.value)}
-                    placeholder="e.g., 15000"
+                    type="text"
+                    value={formatNumberWithCommas(pricePerSqYardMin)}
+                    onChange={(e) => setPricePerSqYardMin(parseFormattedNumber(e.target.value))}
+                    placeholder="e.g., 15,000"
                     className="w-full rounded-lg border border-gold/20 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-400 mb-1">Price per Sq. Yard (Max)</label>
+                  <label className="block text-sm font-medium text-gray-400 mb-1">Price per Sq. Yard (Max) ₹</label>
                   <input
-                    type="number"
-                    value={pricePerSqYardMax}
-                    onChange={(e) => setPricePerSqYardMax(e.target.value)}
-                    placeholder="e.g., 25000"
+                    type="text"
+                    value={formatNumberWithCommas(pricePerSqYardMax)}
+                    onChange={(e) => setPricePerSqYardMax(parseFormattedNumber(e.target.value))}
+                    placeholder="e.g., 25,000"
                     className="w-full rounded-lg border border-gold/20 bg-white/5 px-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
                   />
                 </div>
@@ -546,9 +707,9 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
                   <div className="relative">
                     <Ruler className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                     <input
-                      type="number"
-                      value={plotSizeMin}
-                      onChange={(e) => setPlotSizeMin(e.target.value)}
+                      type="text"
+                      value={formatNumberWithCommas(plotSizeMin)}
+                      onChange={(e) => setPlotSizeMin(parseFormattedNumber(e.target.value))}
                       placeholder="e.g., 150"
                       className="w-full rounded-lg border border-gold/20 bg-white/5 pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
                     />
@@ -559,9 +720,9 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
                   <div className="relative">
                     <Ruler className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                     <input
-                      type="number"
-                      value={plotSizeMax}
-                      onChange={(e) => setPlotSizeMax(e.target.value)}
+                      type="text"
+                      value={formatNumberWithCommas(plotSizeMax)}
+                      onChange={(e) => setPlotSizeMax(parseFormattedNumber(e.target.value))}
                       placeholder="e.g., 500"
                       className="w-full rounded-lg border border-gold/20 bg-white/5 pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
                     />
@@ -757,10 +918,10 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as BrochureStatus)}
-                  className="w-full rounded-lg border border-gold/20 bg-white/5 px-4 py-3 text-white focus:border-gold focus:outline-none"
+                  className="w-full rounded-lg border border-gold/20 bg-neutral-900 px-4 py-3 text-white focus:border-gold focus:outline-none [&>option]:bg-neutral-900 [&>option]:text-white"
                 >
                   {STATUSES.map(({ value, label }) => (
-                    <option key={value} value={value}>{label}</option>
+                    <option key={value} value={value} className="bg-neutral-900 text-white">{label}</option>
                   ))}
                 </select>
               </div>
@@ -800,7 +961,7 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
             
             {coverImageUrl ? (
               <div className="relative">
-                <img src={coverImageUrl} alt="Cover" className="w-full rounded-lg" />
+                <SmartImage src={coverImageUrl} alt="Cover" width={1200} className="w-full rounded-lg" loading="eager" />
                 <button
                   type="button"
                   onClick={() => setCoverImageUrl("")}
@@ -828,6 +989,28 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
                 )}
               </div>
             )}
+
+            <div className="mt-4 flex gap-2">
+              <div className="relative flex-1">
+                <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                <input
+                  type="text"
+                  value={coverGdriveLink}
+                  onChange={(e) => setCoverGdriveLink(e.target.value)}
+                  placeholder="Paste Google Drive image link..."
+                  className="w-full rounded-lg border border-gold/20 bg-white/5 pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={setCoverFromGdrive}
+                className="rounded-lg bg-gold/20 px-4 py-3 text-gold hover:bg-gold/30"
+              >
+                <Plus className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mt-2 text-xs text-gray-500">Google Drive image must be shared as "Anyone with the link".</p>
           </div>
 
           {/* Gallery */}
@@ -854,11 +1037,31 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
                 )}
               </div>
 
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <input
+                    type="text"
+                    value={galleryGdriveLink}
+                    onChange={(e) => setGalleryGdriveLink(e.target.value)}
+                    placeholder="Paste Google Drive image link..."
+                    className="w-full rounded-lg border border-gold/20 bg-white/5 pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:border-gold focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={addGalleryFromGdrive}
+                  className="rounded-lg bg-gold/20 px-4 py-3 text-gold hover:bg-gold/30"
+                >
+                  <Plus className="h-5 w-5" />
+                </button>
+              </div>
+
               {galleryUrls.length > 0 && (
                 <div className="grid grid-cols-3 gap-2">
                   {galleryUrls.map((url, i) => (
                     <div key={i} className="relative aspect-square rounded-lg overflow-hidden">
-                      <img src={url} alt="" className="w-full h-full object-cover" />
+                      <SmartImage src={url} alt="" width={360} className="w-full h-full object-cover" />
                       <button
                         type="button"
                         onClick={() => setGalleryUrls((prev) => prev.filter((_, idx) => idx !== i))}
@@ -869,6 +1072,129 @@ export default function BrochureForm({ brochure }: BrochureFormProps) {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* PDF Brochures */}
+          <div className="rounded-xl border border-gold/20 bg-gradient-to-b from-white/5 to-transparent p-6">
+            <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-gold" />
+              PDF Brochures
+            </h2>
+            <p className="text-xs text-gray-500 mb-4">Upload PDF files that customers can download</p>
+
+            {pdfUploadError && (
+              <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200 whitespace-pre-line">
+                {pdfUploadError}
+              </div>
+            )}
+
+            {pdfUploadSuccess && (
+              <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-200">
+                {pdfUploadSuccess}
+              </div>
+            )}
+            
+            <div className="space-y-4">
+              {/* Option 1: Upload from device */}
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-2">Option 1: Upload from device</label>
+                <div className="relative rounded-lg border-2 border-dashed border-gold/30 p-4 text-center hover:border-gold/50">
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    multiple
+                    onChange={(e) => handlePdfUpload(e.target.files)}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                    disabled={uploadingPdf}
+                  />
+                  {uploadingPdf ? (
+                    <Loader2 className="h-5 w-5 text-gold mx-auto animate-spin" />
+                  ) : (
+                    <>
+                      <Upload className="h-5 w-5 text-gray-500 mx-auto mb-1" />
+                      <p className="text-xs text-gray-400">Click to upload PDF</p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Option 2: Add from Google Drive */}
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-2">Option 2: Add from Google Drive</label>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={gdriveFileName}
+                    onChange={(e) => setGdriveFileName(e.target.value)}
+                    placeholder="File name (e.g., Project Brochure)"
+                    className="w-full rounded-lg border border-gold/20 bg-white/5 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-gold focus:outline-none"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={gdriveLink}
+                      onChange={(e) => setGdriveLink(e.target.value)}
+                      placeholder="Paste Google Drive share link..."
+                      className="flex-1 rounded-lg border border-gold/20 bg-white/5 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-gold focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={addGdriveFile}
+                      disabled={!gdriveLink.trim()}
+                      className="rounded-lg bg-gold/20 px-3 py-2 text-xs font-medium text-gold hover:bg-gold/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-500">Make sure the file is set to "Anyone with the link can view"</p>
+                </div>
+              </div>
+
+              {/* Uploaded Files List */}
+              {files.length > 0 && (
+                <div className="pt-3 border-t border-gold/10">
+                  <label className="block text-xs font-medium text-gray-400 mb-2">Uploaded Files ({files.length})</label>
+                  <div className="space-y-2">
+                    {files.map((file, i) => (
+                      <div key={file.id || i} className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-gold/10">
+                        <FileText className="h-5 w-5 text-red-400 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-white truncate">{file.name}</p>
+                          <p className="text-[10px] text-gray-500">
+                            {(file.source ?? "upload") === "gdrive" ? "Google Drive" : "Uploaded"}
+                            {file.size_bytes ? ` · ${(file.size_bytes / 1024 / 1024).toFixed(2)} MB` : ""}
+                          </p>
+                        </div>
+                        <a
+                          href={file.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-gold hover:underline"
+                        >
+                          View
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => deletePdfFile(i)}
+                          disabled={deletingPdfId === file.id}
+                          className="rounded-full p-1 text-gray-400 hover:bg-red-500/20 hover:text-red-400"
+                        >
+                          {deletingPdfId === file.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {files.length === 0 && (
+                <p className="text-xs text-gray-500 text-center py-2">No PDF files added yet</p>
               )}
             </div>
           </div>

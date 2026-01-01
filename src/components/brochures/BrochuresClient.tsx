@@ -7,6 +7,8 @@ import Footer from "@/components/Footer";
 import FloatingConcierge from "@/components/FloatingConcierge";
 import { Brochure } from "@/lib/supabase/types";
 import { CONTACT, BRAND } from "@/lib/constants";
+import { buildBrochureMediaItems, youTubeToEmbedUrl } from "@/lib/utils";
+import SmartImage from "@/components/SmartImage";
 import {
   Phone,
   MessageCircle,
@@ -32,7 +34,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Play,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Download,
+  FileText
 } from "lucide-react";
 
 interface BrochuresClientProps {
@@ -69,6 +73,7 @@ export default function BrochuresClient({ brochures }: BrochuresClientProps) {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [previewBrochure, setPreviewBrochure] = useState<Brochure | null>(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [showVideoModal, setShowVideoModal] = useState<string | null>(null);
 
   // Get unique regions
   const availableRegions = useMemo(() => {
@@ -118,6 +123,21 @@ export default function BrochuresClient({ brochures }: BrochuresClientProps) {
     if (min && max && min !== max) return `${fmt(min)} - ${fmt(max)}`;
     return min ? `From ${fmt(min)}` : `Up to ${fmt(max!)}`;
   };
+
+  const getTrackedDownloadHref = (brochureId: string, file: { url: string; name?: string | null; source?: string | null; bucket?: string | null }) => {
+    // Build the final file URL (with ?download for Supabase)
+    let fileUrl = file.url;
+    const isSupabasePublic = file.url.includes("/storage/v1/object/public/");
+    const isUpload = (file.source ?? "upload") === "upload";
+    if (isUpload && isSupabasePublic && !file.url.includes("?download") && !file.url.includes("&download")) {
+      const joiner = file.url.includes("?") ? "&" : "?";
+      const filename = `${(file.name || "brochure").trim()}.pdf`;
+      fileUrl = `${file.url}${joiner}download=${encodeURIComponent(filename)}`;
+    }
+    // Return tracked redirect URL
+    return `/api/brochures/download?brochureId=${encodeURIComponent(brochureId)}&url=${encodeURIComponent(fileUrl)}`;
+  };
+
 
   const formatPlotSize = (min: number | null, max: number | null) => {
     if (!min && !max) return "Various";
@@ -276,12 +296,16 @@ export default function BrochuresClient({ brochures }: BrochuresClientProps) {
                   <article
                     key={brochure.id}
                     className="group rounded-xl border border-gold/20 bg-gradient-to-b from-white/[0.06] to-transparent overflow-hidden hover:border-gold/40 transition-all cursor-pointer"
-                    onClick={() => setPreviewBrochure(brochure)}
+                    onClick={() => {
+                      setGalleryIndex(0);
+                      setShowVideoModal(null);
+                      setPreviewBrochure(brochure);
+                    }}
                   >
                     {/* Image - Smaller aspect ratio */}
                     <div className="relative aspect-[16/10] bg-neutral-800">
                       {brochure.cover_image_url ? (
-                        <img src={brochure.cover_image_url} alt={brochure.title} className="w-full h-full object-cover" loading="lazy" />
+                        <SmartImage src={brochure.cover_image_url} alt={brochure.title} width={600} className="w-full h-full object-cover" />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-amber-900/20 to-neutral-900">
                           <MapPin className="h-8 w-8 text-gold/50" />
@@ -402,118 +426,184 @@ export default function BrochuresClient({ brochures }: BrochuresClientProps) {
         <FloatingConcierge />
       </div>
 
-      {/* Quick View Modal - Improved */}
+      {/* Quick View Modal - Horizontal Layout */}
       {previewBrochure && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90" onClick={() => setPreviewBrochure(null)}>
-          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl border border-gold/30 bg-neutral-900 flex flex-col" onClick={e => e.stopPropagation()}>
-            {/* Close */}
-            <button onClick={() => setPreviewBrochure(null)} className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80">
-              <X className="h-5 w-5" />
-            </button>
-
-            {/* Gallery */}
-            <div className="relative aspect-video bg-neutral-800 flex-shrink-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90" onClick={() => { setPreviewBrochure(null); setShowVideoModal(null); }}>
+          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl border border-gold/30 bg-neutral-900 flex flex-col md:flex-row" onClick={e => e.stopPropagation()}>
+            {/* Left: Image - Smaller on mobile, fixed width on desktop */}
+            <div className="relative w-full md:w-2/5 h-48 md:h-auto bg-neutral-800 flex-shrink-0">
+              {/* Close button - positioned on the image */}
+              <button onClick={() => { setPreviewBrochure(null); setShowVideoModal(null); }} className="absolute top-3 left-3 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/80 md:left-auto md:right-3">
+                <X className="h-5 w-5" />
+              </button>
               {(() => {
-                const images = [previewBrochure.cover_image_url, ...(previewBrochure.gallery_urls || [])].filter(Boolean) as string[];
-                return images.length > 0 ? (
+                const mediaItems = buildBrochureMediaItems({
+                  coverImageUrl: previewBrochure.cover_image_url,
+                  galleryUrls: previewBrochure.gallery_urls,
+                  videos: previewBrochure.videos,
+                });
+
+                const item = mediaItems[galleryIndex] || mediaItems[0];
+
+                return mediaItems.length > 0 ? (
                   <>
-                    <img src={images[galleryIndex] || images[0]} alt={previewBrochure.title} className="w-full h-full object-cover" />
-                    {images.length > 1 && (
+                    {item?.type === "video" ? (
+                      <button type="button" onClick={() => item && setShowVideoModal(item.url)} className="w-full h-full">
+                        {item?.thumbnailUrl ? (
+                          <SmartImage src={item.thumbnailUrl} alt={previewBrochure.title} width={1200} className="w-full h-full object-cover" loading="eager" />
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-red-900/30 to-neutral-900" />
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/60 transition-colors">
+                          <Play className="h-14 w-14 text-white fill-white" />
+                        </div>
+                      </button>
+                    ) : (
+                      <SmartImage src={item?.url || ""} alt={previewBrochure.title} width={1200} className="w-full h-full object-cover" loading="eager" />
+                    )}
+
+                    {mediaItems.length > 1 && (
                       <>
-                        <button onClick={() => setGalleryIndex(p => p === 0 ? images.length - 1 : p - 1)} className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/60 p-2 rounded-full text-white hover:bg-black/80">
-                          <ChevronLeft className="h-5 w-5" />
+                        <button onClick={() => setGalleryIndex(p => p === 0 ? mediaItems.length - 1 : p - 1)} className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/60 p-1.5 rounded-full text-white hover:bg-black/80">
+                          <ChevronLeft className="h-4 w-4" />
                         </button>
-                        <button onClick={() => setGalleryIndex(p => p === images.length - 1 ? 0 : p + 1)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/60 p-2 rounded-full text-white hover:bg-black/80">
-                          <ChevronRight className="h-5 w-5" />
+                        <button onClick={() => setGalleryIndex(p => p === mediaItems.length - 1 ? 0 : p + 1)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/60 p-1.5 rounded-full text-white hover:bg-black/80">
+                          <ChevronRight className="h-4 w-4" />
                         </button>
-                        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-                          {images.map((_, i) => (
-                            <button key={i} onClick={() => setGalleryIndex(i)} className={`w-2 h-2 rounded-full ${i === galleryIndex ? "bg-gold" : "bg-white/40"}`} />
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                          {mediaItems.map((_, i) => (
+                            <button key={i} onClick={() => setGalleryIndex(i)} className={`w-1.5 h-1.5 rounded-full ${i === galleryIndex ? "bg-gold" : "bg-white/40"}`} />
                           ))}
                         </div>
                       </>
                     )}
                   </>
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <MapPin className="h-16 w-16 text-gray-600" />
+                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-amber-900/20 to-neutral-900">
+                    <MapPin className="h-12 w-12 text-gold/40" />
                   </div>
                 );
               })()}
               
               {/* Status */}
-              <span className={`absolute top-3 left-3 ${STATUS_CONFIG[previewBrochure.status]?.color || "bg-green-500"} text-white text-xs font-bold px-3 py-1 rounded-full`}>
+              <span className={`absolute top-3 left-3 ${STATUS_CONFIG[previewBrochure.status]?.color || "bg-green-500"} text-white text-[10px] font-bold px-2 py-0.5 rounded-full`}>
                 {STATUS_CONFIG[previewBrochure.status]?.label || "Available"}
               </span>
             </div>
 
-            {/* Content - Scrollable */}
-            <div className="flex-1 overflow-y-auto p-5">
-              <div className="flex items-start justify-between gap-4 mb-4">
-                <div>
-                  <h2 className="text-xl font-serif text-white">{previewBrochure.title}</h2>
-                  <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
-                    <MapPin className="h-4 w-4" /> {previewBrochure.location} · {previewBrochure.region}
-                  </p>
+            {/* Right: Content - Scrollable */}
+            <div className="flex-1 flex flex-col min-h-0 md:max-h-[90vh]">
+              <div className="flex-1 overflow-y-auto p-4 md:p-5">
+                {/* Title & Price */}
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="min-w-0">
+                    <h2 className="text-lg md:text-xl font-serif text-white truncate">{previewBrochure.title}</h2>
+                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                      <MapPin className="h-3 w-3 flex-shrink-0" /> {previewBrochure.location} · {previewBrochure.region}
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-lg md:text-xl font-bold text-gold">{formatPrice(previewBrochure.budget_min, previewBrochure.budget_max)}</p>
+                    <p className="text-[10px] text-gray-500">{formatPlotSize(previewBrochure.plot_size_min, previewBrochure.plot_size_max)}</p>
+                  </div>
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-xl font-bold text-gold">{formatPrice(previewBrochure.budget_min, previewBrochure.budget_max)}</p>
-                  <p className="text-xs text-gray-500">{formatPlotSize(previewBrochure.plot_size_min, previewBrochure.plot_size_max)}</p>
-                </div>
+
+                {previewBrochure.description && (
+                  <p className="text-sm text-gray-300 mb-3 line-clamp-3">{previewBrochure.description}</p>
+                )}
+
+                {/* Highlights */}
+                {previewBrochure.highlights && previewBrochure.highlights.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {previewBrochure.highlights.map((h, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 text-[10px] text-gray-300 bg-white/5 border border-gold/20 px-2 py-0.5 rounded-full">
+                        <Check className="h-2.5 w-2.5 text-green-400" /> {h}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* Why Invest */}
+                {previewBrochure.why_invest && previewBrochure.why_invest.length > 0 && (
+                  <div className="p-3 rounded-lg bg-gradient-to-br from-gold/10 to-transparent border border-gold/20 mb-3">
+                    <h3 className="text-xs font-semibold text-gold mb-2 flex items-center gap-1.5">
+                      <TrendingUp className="h-3.5 w-3.5" /> Why Invest Here?
+                    </h3>
+                    <ul className="space-y-1">
+                      {previewBrochure.why_invest.slice(0, 4).map((r, i) => (
+                        <li key={i} className="flex items-start gap-1.5 text-xs text-gray-300">
+                          <Check className="h-3 w-3 text-green-400 flex-shrink-0 mt-0.5" /> {r}
+                        </li>
+                      ))}
+                      {previewBrochure.why_invest.length > 4 && (
+                        <li className="text-xs text-gray-500">+{previewBrochure.why_invest.length - 4} more reasons...</li>
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+                {/* PDF Downloads */}
+                {previewBrochure.files && previewBrochure.files.length > 0 && (
+                  <div className="p-3 rounded-lg bg-white/5 border border-gold/20">
+                    <h3 className="text-xs font-semibold text-white mb-2 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-gold" /> Download Brochure
+                    </h3>
+                    <div className="space-y-1.5">
+                      {previewBrochure.files.map((file, i) => (
+                        <a
+                          key={i}
+                          href={getTrackedDownloadHref(previewBrochure.id, file)}
+                          className="flex items-center gap-2 text-xs text-gray-300 hover:text-gold transition-colors group"
+                        >
+                          <Download className="h-3.5 w-3.5 text-gold group-hover:scale-110 transition-transform" />
+                          <span className="truncate">{file.name || 'Brochure PDF'}</span>
+                          {file.size_bytes && (
+                            <span className="text-gray-500 text-[10px]">({(file.size_bytes / 1024 / 1024).toFixed(1)} MB)</span>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {previewBrochure.description && (
-                <p className="text-sm text-gray-300 mb-4">{previewBrochure.description}</p>
-              )}
-
-              {/* Highlights */}
-              {previewBrochure.highlights && previewBrochure.highlights.length > 0 && (
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {previewBrochure.highlights.map((h, i) => (
-                    <span key={i} className="inline-flex items-center gap-1 text-xs text-gray-300 bg-white/5 border border-gold/20 px-2 py-1 rounded-full">
-                      <Check className="h-3 w-3 text-green-400" /> {h}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Why Invest */}
-              {previewBrochure.why_invest && previewBrochure.why_invest.length > 0 && (
-                <div className="p-4 rounded-xl bg-gradient-to-br from-gold/10 to-transparent border border-gold/20 mb-4">
-                  <h3 className="text-sm font-semibold text-gold mb-2 flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4" /> Why Invest Here?
-                  </h3>
-                  <ul className="space-y-1.5">
-                    {previewBrochure.why_invest.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm text-gray-300">
-                        <Check className="h-4 w-4 text-green-400 flex-shrink-0 mt-0.5" /> {r}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {/* Actions - Fixed bottom */}
+              <div className="flex gap-2 p-3 border-t border-gold/20 bg-neutral-900 flex-shrink-0">
+                <a href={`tel:${previewBrochure.phone_override || CONTACT.phone}`} className="flex-1 inline-flex items-center justify-center gap-1.5 bg-gold text-black py-2 rounded-lg text-xs font-bold">
+                  <Phone className="h-3.5 w-3.5" /> Call
+                </a>
+                <a
+                  href={`${previewBrochure.whatsapp_override || CONTACT.whatsappLink}?text=${encodeURIComponent(`Hi, I'm interested in ${previewBrochure.title}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 border border-gold/40 text-white py-2 rounded-lg text-xs font-semibold hover:border-gold"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
+                </a>
+                <Link
+                  href={`/brochures/${previewBrochure.slug}`}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 border border-white/20 text-white py-2 rounded-lg text-xs font-semibold hover:border-gold"
+                >
+                  Details <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
+              </div>
             </div>
+          </div>
+        </div>
+      )}
 
-            {/* Actions - Fixed bottom */}
-            <div className="flex gap-3 p-4 border-t border-gold/20 bg-neutral-900">
-              <a href={`tel:${previewBrochure.phone_override || CONTACT.phone}`} className="flex-1 inline-flex items-center justify-center gap-2 bg-gold text-black py-2.5 rounded-xl text-sm font-bold">
-                <Phone className="h-4 w-4" /> Call
-              </a>
-              <a
-                href={`${previewBrochure.whatsapp_override || CONTACT.whatsappLink}?text=${encodeURIComponent(`Hi, I'm interested in ${previewBrochure.title}`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex-1 inline-flex items-center justify-center gap-2 border border-gold/40 text-white py-2.5 rounded-xl text-sm font-semibold hover:border-gold"
-              >
-                <MessageCircle className="h-4 w-4" /> WhatsApp
-              </a>
-              <Link
-                href={`/brochures/${previewBrochure.slug}`}
-                className="flex-1 inline-flex items-center justify-center gap-2 border border-white/20 text-white py-2.5 rounded-xl text-sm font-semibold hover:border-gold"
-              >
-                Full Details <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
+      {showVideoModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95 p-4" onClick={() => setShowVideoModal(null)}>
+          <div className="relative w-full max-w-4xl aspect-video" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setShowVideoModal(null)} className="absolute -top-10 right-0 text-white hover:text-gold">
+              Close
+            </button>
+            <iframe
+              src={youTubeToEmbedUrl(showVideoModal)}
+              className="w-full h-full rounded-xl"
+              allowFullScreen
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            />
           </div>
         </div>
       )}

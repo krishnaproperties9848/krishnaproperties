@@ -73,6 +73,9 @@ export interface BrochureFile {
   type: "pdf" | "docx" | "image" | "video";
   size_bytes: number | null;
   is_primary: boolean;
+  source?: "upload" | "gdrive";
+  bucket?: string | null;
+  storage_path?: string | null;
 }
 
 export interface BrochureVideo {

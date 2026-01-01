@@ -45,12 +45,6 @@ export default async function BrochureDetailsPage({ params }: Props) {
     notFound();
   }
 
-  // Increment view count
-  await supabase
-    .from("brochures")
-    .update({ views_count: (brochure.views_count || 0) + 1 })
-    .eq("id", brochure.id);
-
   // Get related brochures
   const { data: relatedBrochures } = await supabase
     .from("brochures")

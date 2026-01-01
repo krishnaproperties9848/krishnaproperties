@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import FloatingConcierge from "@/components/FloatingConcierge";
 import { Brochure } from "@/lib/supabase/types";
 import { CONTACT, BRAND } from "@/lib/constants";
+import { buildBrochureMediaItems, youTubeToEmbedUrl } from "@/lib/utils";
+import SmartImage from "@/components/SmartImage";
 import {
   Phone,
   MessageCircle,
@@ -68,8 +70,48 @@ export default function BrochureDetails({ brochure, related }: BrochureDetailsPr
   const [isSaved, setIsSaved] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState<string | null>(null);
 
+  useEffect(() => {
+    try {
+      const payload = JSON.stringify({ brochureId: brochure.id, incrementBy: 1 });
+      if (typeof navigator !== "undefined" && "sendBeacon" in navigator) {
+        navigator.sendBeacon(
+          "/api/brochures/view",
+          new Blob([payload], { type: "application/json" })
+        );
+      } else {
+        fetch("/api/brochures/view", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {
+      // ignore
+    }
+  }, [brochure.id]);
+
+  const getTrackedDownloadHref = (file: { url: string; name?: string | null; source?: string | null }) => {
+    if (!file?.url) return "";
+    // Build the final file URL (with ?download for Supabase)
+    let fileUrl = file.url;
+    const isSupabasePublic = file.url.includes("/storage/v1/object/public/");
+    const isUpload = (file.source ?? "upload") === "upload";
+    if (isUpload && isSupabasePublic && !file.url.includes("?download") && !file.url.includes("&download")) {
+      const joiner = file.url.includes("?") ? "&" : "?";
+      const filename = `${(file.name || "brochure").trim()}.pdf`;
+      fileUrl = `${file.url}${joiner}download=${encodeURIComponent(filename)}`;
+    }
+    // Return tracked redirect URL
+    return `/api/brochures/download?brochureId=${encodeURIComponent(brochure.id)}&url=${encodeURIComponent(fileUrl)}`;
+  };
+
   const status = STATUS_CONFIG[brochure.status] || STATUS_CONFIG.available;
-  const images = [brochure.cover_image_url, ...(brochure.gallery_urls || [])].filter(Boolean) as string[];
+  const mediaItems = buildBrochureMediaItems({
+    coverImageUrl: brochure.cover_image_url,
+    galleryUrls: brochure.gallery_urls,
+    videos: brochure.videos,
+  });
 
   const formatPrice = (min: number | null, max: number | null) => {
     if (!min && !max) return "Contact for Price";
@@ -111,10 +153,32 @@ export default function BrochureDetails({ brochure, related }: BrochureDetailsPr
           <div className="grid lg:grid-cols-5 gap-6">
             {/* Left: Gallery - 3 cols */}
             <div className="lg:col-span-3 space-y-4">
-              {/* Main Image */}
+              {/* Main Media */}
               <div className="relative aspect-[16/10] rounded-2xl overflow-hidden bg-neutral-800">
-                {images.length > 0 ? (
-                  <img src={images[galleryIndex]} alt={brochure.title} className="w-full h-full object-cover" />
+                {mediaItems.length > 0 ? (
+                  (() => {
+                    const item = mediaItems[galleryIndex] || mediaItems[0];
+                    if (item.type === "video") {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setShowVideoModal(item.url)}
+                          className="w-full h-full"
+                        >
+                          {item.thumbnailUrl ? (
+                            <SmartImage src={item.thumbnailUrl} alt={brochure.title} width={1400} className="w-full h-full object-cover" loading="eager" />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-red-900/30 to-neutral-900" />
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/60 transition-colors">
+                            <Play className="h-16 w-16 text-white fill-white" />
+                          </div>
+                        </button>
+                      );
+                    }
+
+                    return <SmartImage src={item.url} alt={brochure.title} width={1400} className="w-full h-full object-cover" loading="eager" />;
+                  })()
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-amber-900/20 to-neutral-900">
                     <MapPin className="h-20 w-20 text-gold/30" />
@@ -122,16 +186,16 @@ export default function BrochureDetails({ brochure, related }: BrochureDetailsPr
                 )}
 
                 {/* Gallery Nav */}
-                {images.length > 1 && (
+                {mediaItems.length > 1 && (
                   <>
-                    <button onClick={() => setGalleryIndex(p => p === 0 ? images.length - 1 : p - 1)} className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/60 p-2 rounded-full text-white hover:bg-black/80">
+                    <button onClick={() => setGalleryIndex(p => p === 0 ? mediaItems.length - 1 : p - 1)} className="absolute left-3 top-1/2 -translate-y-1/2 bg-black/60 p-2 rounded-full text-white hover:bg-black/80">
                       <ChevronLeft className="h-5 w-5" />
                     </button>
-                    <button onClick={() => setGalleryIndex(p => p === images.length - 1 ? 0 : p + 1)} className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/60 p-2 rounded-full text-white hover:bg-black/80">
+                    <button onClick={() => setGalleryIndex(p => p === mediaItems.length - 1 ? 0 : p + 1)} className="absolute right-3 top-1/2 -translate-y-1/2 bg-black/60 p-2 rounded-full text-white hover:bg-black/80">
                       <ChevronRight className="h-5 w-5" />
                     </button>
                     <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 px-3 py-1 rounded-full text-xs text-white">
-                      {galleryIndex + 1} / {images.length}
+                      {galleryIndex + 1} / {mediaItems.length}
                     </div>
                   </>
                 )}
@@ -153,42 +217,30 @@ export default function BrochureDetails({ brochure, related }: BrochureDetailsPr
               </div>
 
               {/* Thumbnails */}
-              {images.length > 1 && (
+              {mediaItems.length > 1 && (
                 <div className="flex gap-2 overflow-x-auto pb-2">
-                  {images.map((img, i) => (
+                  {mediaItems.map((item, i) => (
                     <button
                       key={i}
                       onClick={() => setGalleryIndex(i)}
                       className={`flex-shrink-0 w-20 h-14 rounded-lg overflow-hidden border-2 transition-all ${i === galleryIndex ? "border-gold" : "border-transparent opacity-60 hover:opacity-100"}`}
                     >
-                      <img src={img} alt="" className="w-full h-full object-cover" />
+                      {item.type === "video" ? (
+                        <div className="relative w-full h-full">
+                          {item.thumbnailUrl ? (
+                            <SmartImage src={item.thumbnailUrl} alt="" width={240} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-red-900/30 to-neutral-900" />
+                          )}
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                            <Play className="h-6 w-6 text-white fill-white" />
+                          </div>
+                        </div>
+                      ) : (
+                        <SmartImage src={item.url} alt="" width={240} className="w-full h-full object-cover" />
+                      )}
                     </button>
                   ))}
-                </div>
-              )}
-
-              {/* Videos */}
-              {brochure.videos && brochure.videos.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-400 mb-2">Videos</h3>
-                  <div className="flex gap-2 overflow-x-auto">
-                    {brochure.videos.map((video, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setShowVideoModal(video.url)}
-                        className="relative flex-shrink-0 w-32 h-20 rounded-lg overflow-hidden bg-neutral-800 group"
-                      >
-                        {video.thumbnail_url ? (
-                          <img src={video.thumbnail_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-red-900/30 to-neutral-900" />
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/60 transition-colors">
-                          <Play className="h-8 w-8 text-white fill-white" />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
                 </div>
               )}
 
@@ -327,9 +379,7 @@ export default function BrochureDetails({ brochure, related }: BrochureDetailsPr
                       {brochure.files.map((file, i) => (
                         <a
                           key={i}
-                          href={file.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          href={getTrackedDownloadHref(file)}
                           className="flex items-center gap-2 text-sm text-gold hover:underline"
                         >
                           <FileText className="h-4 w-4" />
@@ -392,7 +442,7 @@ export default function BrochureDetails({ brochure, related }: BrochureDetailsPr
               Close
             </button>
             <iframe
-              src={showVideoModal.replace("watch?v=", "embed/")}
+              src={youTubeToEmbedUrl(showVideoModal)}
               className="w-full h-full rounded-xl"
               allowFullScreen
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
