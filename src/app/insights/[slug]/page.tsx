@@ -1,28 +1,24 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Clock, Calendar, Eye, Share2, Phone, MessageCircle, ChevronRight } from "lucide-react";
-import { blogService } from "@/lib/blog";
+import { ArrowLeft, Clock, Calendar, Eye, Phone, MessageCircle, ChevronRight } from "lucide-react";
+import { getBlogRepository } from "@/lib/blog/supabase-repository";
 import { BlogCard, MarkdownRenderer } from "@/components/blog";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import FloatingConcierge from "@/components/FloatingConcierge";
 import { CONTACT, BRAND } from "@/lib/constants";
 
+export const revalidate = 60;
+
 interface BlogPostPageProps {
   params: Promise<{ slug: string }>;
 }
 
-export async function generateStaticParams() {
-  const posts = blogService.getPosts({ limit: 100 });
-  return posts.items.map((post) => ({
-    slug: post.slug,
-  }));
-}
-
 export async function generateMetadata({ params }: BlogPostPageProps) {
   const { slug } = await params;
-  const post = blogService.getPostBySlug(slug);
+  const repo = getBlogRepository();
+  const post = await repo.getPostBySlug(slug);
   
   if (!post) {
     return {
@@ -35,9 +31,9 @@ export async function generateMetadata({ params }: BlogPostPageProps) {
     description: post.excerpt,
     openGraph: {
       title: post.title,
-      description: post.excerpt,
+      description: post.excerpt || "",
       type: "article",
-      publishedTime: post.publishedAt?.toISOString(),
+      publishedTime: post.publishedAt || undefined,
       authors: [post.author.name],
     },
   };
@@ -45,13 +41,14 @@ export async function generateMetadata({ params }: BlogPostPageProps) {
 
 export default async function BlogPostPage({ params }: BlogPostPageProps) {
   const { slug } = await params;
-  const post = blogService.getPostBySlug(slug);
+  const repo = getBlogRepository();
+  const post = await repo.getPostBySlug(slug);
 
   if (!post) {
     notFound();
   }
 
-  const relatedPosts = blogService.getRelatedPosts(slug, 3);
+  const relatedPosts = await repo.getRelatedPosts(post.id, post.category?.id || null, 3);
   const formattedDate = post.publishedAt
     ? new Date(post.publishedAt).toLocaleDateString("en-IN", {
         day: "numeric",
@@ -82,10 +79,10 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
           {/* Hero Section */}
           <section className="relative overflow-hidden border-b border-gold/10">
             {/* Background Image */}
-            {post.featuredImage && (
+            {post.coverImage && (
               <div className="absolute inset-0 z-0">
                 <Image
-                  src={post.featuredImage}
+                  src={post.coverImage}
                   alt={post.title}
                   fill
                   className="object-cover opacity-20"
@@ -105,27 +102,33 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                   <ArrowLeft className="h-4 w-4" />
                   Blog
                 </Link>
-                <ChevronRight className="h-4 w-4" />
-                <Link
-                  href={`/insights?category=${post.category.slug}`}
-                  className="hover:text-gold transition-colors"
-                  style={{ color: post.category.color }}
-                >
-                  {post.category.name}
-                </Link>
+                {post.category && (
+                  <>
+                    <ChevronRight className="h-4 w-4" />
+                    <Link
+                      href={`/insights?category=${post.category.slug}`}
+                      className="hover:text-gold transition-colors"
+                      style={{ color: post.category.color || "#d4af37" }}
+                    >
+                      {post.category.name}
+                    </Link>
+                  </>
+                )}
               </nav>
 
               <div className="mx-auto max-w-3xl">
                 {/* Category Badge */}
-                <span
-                  className="mb-4 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider"
-                  style={{
-                    backgroundColor: post.category.color || "#d4af37",
-                    color: "#000",
-                  }}
-                >
-                  {post.category.name}
-                </span>
+                {post.category && (
+                  <span
+                    className="mb-4 inline-block rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider"
+                    style={{
+                      backgroundColor: post.category.color || "#d4af37",
+                      color: "#000",
+                    }}
+                  >
+                    {post.category.name}
+                  </span>
+                )}
 
                 {/* Title */}
                 <h1 className="text-3xl font-serif text-white leading-tight md:text-4xl lg:text-5xl">
@@ -151,7 +154,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                     </div>
                     <div>
                       <p className="font-semibold text-white">{post.author.name}</p>
-                      <p className="text-sm text-gray-500">{post.author.role}</p>
+                      <p className="text-sm text-gray-500">Senior Property Consultant</p>
                     </div>
                   </div>
 
@@ -163,11 +166,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
                     </span>
                     <span className="flex items-center gap-1">
                       <Clock className="h-4 w-4" />
-                      {post.meta.readingTime.minutes} min read
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Eye className="h-4 w-4" />
-                      {post.meta.views.toLocaleString()} views
+                      {post.readingTime} min read
                     </span>
                   </div>
                 </div>
@@ -180,7 +179,7 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
             <div className="container mx-auto px-6">
               <div className="mx-auto max-w-3xl">
                 {/* Article Content */}
-                <MarkdownRenderer content={post.content} />
+                <MarkdownRenderer content={post.content || ""} />
 
                 {/* Tags */}
                 {post.tags.length > 0 && (

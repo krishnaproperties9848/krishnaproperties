@@ -122,6 +122,8 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
 
     const parseInline = (text: string): string => {
       return text
+        // Images MUST be parsed before links (similar syntax but with ! prefix)
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="inline-block max-h-6 rounded" />')
         .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-white">$1</strong>')
         .replace(/\*(.+?)\*/g, '<em class="italic text-gold-light/90">$1</em>')
         .replace(/`(.+?)`/g, '<code class="px-1.5 py-0.5 rounded bg-gold/10 text-gold-light font-mono text-sm">$1</code>')
@@ -324,16 +326,91 @@ export function MarkdownRenderer({ content, className = "" }: MarkdownRendererPr
         continue;
       }
 
+      // Standalone images (full line is just an image)
+      const imageMatch = trimmedLine.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+      if (imageMatch) {
+        flushList();
+        const [, alt, src] = imageMatch;
+        elements.push(
+          <figure key={`img-${elements.length}`} className="my-8">
+            <div className="overflow-hidden rounded-xl border border-gold/20 shadow-lg bg-neutral-900">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt={alt || "Blog image"}
+                loading="lazy"
+                decoding="async"
+                className="w-full h-auto max-w-full block"
+                style={{ aspectRatio: 'auto' }}
+              />
+            </div>
+            {alt && (
+              <figcaption className="mt-3 text-center text-sm text-gray-500 italic">
+                {alt}
+              </figcaption>
+            )}
+          </figure>
+        );
+        continue;
+      }
+
       // Regular paragraphs
       flushList();
       if (trimmedLine) {
-        elements.push(
-          <p
-            key={`p-${elements.length}`}
-            className="my-4 text-gray-300 leading-relaxed text-lg"
-            dangerouslySetInnerHTML={{ __html: parseInline(trimmedLine) }}
-          />
-        );
+        // Check if paragraph contains an image - render it as a block
+        const hasImage = /!\[([^\]]*)\]\(([^)]+)\)/.test(trimmedLine);
+        if (hasImage) {
+          // Extract and render images separately from text
+          const parts = trimmedLine.split(/(!\[[^\]]*\]\([^)]+\))/);
+          const renderedParts = parts.map((part, idx) => {
+            const imgMatch = part.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
+            if (imgMatch) {
+              const [, alt, src] = imgMatch;
+              return (
+                <figure key={`inline-img-${idx}`} className="my-6">
+                  <div className="overflow-hidden rounded-xl border border-gold/20 shadow-lg bg-neutral-900">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={src}
+                      alt={alt || "Blog image"}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-auto max-w-full block"
+                      style={{ aspectRatio: 'auto' }}
+                    />
+                  </div>
+                  {alt && (
+                    <figcaption className="mt-3 text-center text-sm text-gray-500 italic">
+                      {alt}
+                    </figcaption>
+                  )}
+                </figure>
+              );
+            } else if (part.trim()) {
+              return (
+                <p
+                  key={`text-${idx}`}
+                  className="my-4 text-gray-300 leading-relaxed text-lg"
+                  dangerouslySetInnerHTML={{ __html: parseInline(part) }}
+                />
+              );
+            }
+            return null;
+          });
+          elements.push(
+            <div key={`mixed-${elements.length}`}>
+              {renderedParts}
+            </div>
+          );
+        } else {
+          elements.push(
+            <p
+              key={`p-${elements.length}`}
+              className="my-4 text-gray-300 leading-relaxed text-lg"
+              dangerouslySetInnerHTML={{ __html: parseInline(trimmedLine) }}
+            />
+          );
+        }
       }
     }
 

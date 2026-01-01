@@ -3,21 +3,49 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Clock, ArrowRight, BookOpen } from "lucide-react";
-import { IBlogPostCard } from "@/lib/blog";
 import { cn } from "@/lib/utils";
 
+// Flexible post type that works with both static and Supabase data
+interface BlogPostData {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt?: string | null;
+  featuredImage?: string | null;
+  coverImage?: string | null;
+  author: {
+    name: string;
+    avatar: string;
+  };
+  category?: {
+    name: string;
+    slug: string;
+    color?: string | null;
+  } | null;
+  readingTime?: number;
+  publishedAt?: string | Date | null;
+  isFeatured?: boolean;
+}
+
 interface BlogCardProps {
-  post: IBlogPostCard;
+  post: BlogPostData;
   variant?: "default" | "featured" | "compact";
   className?: string;
 }
 
 export function BlogCard({ post, variant = "default", className }: BlogCardProps) {
-  const formattedDate = new Date(post.publishedAt).toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+  const formattedDate = post.publishedAt
+    ? new Date(post.publishedAt).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
+
+  // Get image URL (supports both featuredImage and coverImage)
+  const imageUrl = post.featuredImage || post.coverImage;
+  const categoryColor = post.category?.color || "#d4af37";
+  const categoryName = post.category?.name || "Article";
 
   if (variant === "featured") {
     return (
@@ -29,10 +57,10 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
         )}
       >
         {/* Background Image */}
-        {post.featuredImage && (
+        {imageUrl && (
           <div className="absolute inset-0 z-0">
             <Image
-              src={post.featuredImage}
+              src={imageUrl}
               alt={post.title}
               fill
               className="object-cover opacity-40 transition-all duration-500 group-hover:opacity-50 group-hover:scale-105"
@@ -50,11 +78,11 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
             <span
               className="rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest shadow-lg"
               style={{
-                background: `linear-gradient(135deg, ${post.category.color || "#d4af37"}, ${post.category.color || "#d4af37"}dd)`,
+                background: `linear-gradient(135deg, ${categoryColor}, ${categoryColor}dd)`,
                 color: "#000",
               }}
             >
-              {post.category.name}
+              {categoryName}
             </span>
             <span className="text-xs text-gold/60 font-medium">{formattedDate}</span>
           </div>
@@ -90,7 +118,7 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
             <div className="flex items-center justify-between border-t border-gold/20 pt-4 text-xs">
               <span className="flex items-center gap-1.5 text-gray-400">
                 <BookOpen className="h-3.5 w-3.5" />
-                {post.readingTime} min read
+                {post.readingTime || 5} min read
               </span>
               <span className="flex items-center gap-1.5 text-gold font-semibold group-hover:gap-2.5 transition-all">
                 Read Article <ArrowRight className="h-4 w-4" />
@@ -111,10 +139,10 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
           className
         )}
       >
-        {post.featuredImage && (
+        {imageUrl && (
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg">
             <Image
-              src={post.featuredImage}
+              src={imageUrl}
               alt={post.title}
               fill
               className="object-cover"
@@ -126,7 +154,7 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
             {post.title}
           </h4>
           <p className="mt-1 text-xs text-gray-500">
-            {post.readingTime} min · {formattedDate}
+            {post.readingTime || 5} min · {formattedDate}
           </p>
         </div>
       </Link>
@@ -143,10 +171,10 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
       )}
     >
       {/* Image */}
-      {post.featuredImage && (
+      {imageUrl && (
         <div className="relative aspect-[16/10] w-full overflow-hidden">
           <Image
-            src={post.featuredImage}
+            src={imageUrl}
             alt={post.title}
             fill
             className="object-cover transition-all duration-500 group-hover:scale-110"
@@ -158,18 +186,18 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
             <span
               className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-widest shadow-lg backdrop-blur-sm"
               style={{
-                background: `linear-gradient(135deg, ${post.category.color || "#d4af37"}ee, ${post.category.color || "#d4af37"}aa)`,
+                background: `linear-gradient(135deg, ${categoryColor}ee, ${categoryColor}aa)`,
                 color: "#000",
               }}
             >
-              {post.category.name}
+              {categoryName}
             </span>
           </div>
           
           {/* Reading time on image */}
           <div className="absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1 text-xs text-white backdrop-blur-sm">
             <BookOpen className="h-3 w-3" />
-            {post.readingTime} min
+            {post.readingTime || 5} min
           </div>
         </div>
       )}
