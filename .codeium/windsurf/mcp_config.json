@@ -1,0 +1,28 @@
+{
+    "mcpServers": {
+        "supabase": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "mcp-remote",
+                "https://mcp.supabase.com/mcp?project_ref=mggemmpkqzwlvmypvygx"
+            ]
+        },
+        "ado": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@azure-devops/mcp",
+                "gadereyaanshpatel",
+                "-d",
+                "core",
+                "work-items",
+                "--authentication",
+                "envvar"
+            ],
+            "env": {
+                "ADO_MCP_AUTH_TOKEN": "${ADO_MCP_AUTH_TOKEN}"
+            }
+        }
+    }
+}
