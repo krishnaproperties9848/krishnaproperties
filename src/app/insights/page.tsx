@@ -16,11 +16,12 @@ export default async function InsightsPage() {
   const repo = getBlogRepository();
 
   // Fetch all data from Supabase
-  const [postsResult, featuredPosts, categories, stats] = await Promise.all([
+  const [postsResult, featuredPosts, categories, stats, popularPosts] = await Promise.all([
     repo.getPosts({ perPage: 50 }),
     repo.getFeaturedPosts(3),
     repo.getCategories(),
     repo.getStats(),
+    repo.getPopularPosts(4),
   ]);
 
   return (
@@ -46,6 +47,7 @@ export default async function InsightsPage() {
           featuredPosts={featuredPosts}
           categories={categories}
           stats={stats}
+          popularPosts={popularPosts}
         />
 
         <Footer />

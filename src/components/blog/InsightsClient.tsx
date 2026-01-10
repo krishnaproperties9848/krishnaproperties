@@ -3,13 +3,18 @@
 import { useState, useMemo, useCallback } from "react";
 import { Filter, X, BookOpen, TrendingUp } from "lucide-react";
 import { BlogCard, BlogSearch, CategoryFilter, BlogSidebar } from "@/components/blog";
-import type { IBlogPost, IBlogCategory, IBlogStats } from "@/lib/blog/supabase-repository";
+import type {
+  IBlogPost,
+  IBlogCategory,
+  IBlogStats,
+} from "@/lib/blog/supabase-repository";
 
 interface InsightsClientProps {
   initialPosts: IBlogPost[];
   featuredPosts: IBlogPost[];
   categories: IBlogCategory[];
   stats: IBlogStats;
+  popularPosts: IBlogPost[];
 }
 
 export default function InsightsClient({
@@ -17,6 +22,7 @@ export default function InsightsClient({
   featuredPosts,
   categories,
   stats,
+  popularPosts,
 }: InsightsClientProps) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -232,6 +238,7 @@ export default function InsightsClient({
                   categories={adaptedCategories}
                   selectedCategory={selectedCategory}
                   onCategorySelect={handleCategorySelect}
+                  popularPosts={popularPosts}
                 />
               </div>
             </div>

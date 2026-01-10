@@ -1,6 +1,7 @@
 "use client";
 
-import { blogService, ICategory, IBlogPostCard } from "@/lib/blog";
+import { ICategory, IBlogPostCard } from "@/lib/blog";
+import type { IBlogPost as ISupabaseBlogPost } from "@/lib/blog/supabase-repository";
 import { BlogCard } from "./BlogCard";
 import { CategoryFilter } from "./CategoryFilter";
 import { Phone, MessageCircle } from "lucide-react";
@@ -10,7 +11,7 @@ interface BlogSidebarProps {
   categories: Array<ICategory & { postCount: number }>;
   selectedCategory: string | null;
   onCategorySelect: (slug: string | null) => void;
-  popularPosts?: IBlogPostCard[];
+  popularPosts?: Array<IBlogPostCard | ISupabaseBlogPost>;
 }
 
 export function BlogSidebar({
@@ -19,7 +20,7 @@ export function BlogSidebar({
   onCategorySelect,
   popularPosts,
 }: BlogSidebarProps) {
-  const popular = popularPosts || blogService.getPopularPosts(4);
+  const popular = popularPosts || [];
 
   return (
     <aside className="space-y-8">
@@ -37,11 +38,15 @@ export function BlogSidebar({
       {/* Popular Posts */}
       <div className="rounded-2xl border border-gold/20 bg-white/5 p-5">
         <h3 className="mb-4 text-lg font-serif text-gold-light">Popular Articles</h3>
-        <div className="space-y-1">
-          {popular.map((post) => (
-            <BlogCard key={post.id} post={post} variant="compact" />
-          ))}
-        </div>
+        {popular.length > 0 ? (
+          <div className="space-y-1">
+            {popular.map((post) => (
+              <BlogCard key={post.id} post={post} variant="compact" />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400">No popular articles yet.</p>
+        )}
       </div>
 
       {/* CTA Card */}
