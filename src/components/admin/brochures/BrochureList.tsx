@@ -13,7 +13,6 @@ import {
   Trash2,
   Eye,
   EyeOff,
-  MoreVertical,
   Star,
   StarOff,
   MapPin,
@@ -24,7 +23,6 @@ import {
   Square,
   Copy,
   ExternalLink,
-  TrendingUp,
   Download,
   Image as ImageIcon,
   Globe,
@@ -61,6 +59,7 @@ export default function BrochureList({ brochures }: BrochureListProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<string | null>(null);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [duplicating, setDuplicating] = useState<string | null>(null);
 
   const filteredBrochures = useMemo(() => {
     return brochures.filter((b) => {
@@ -150,6 +149,26 @@ export default function BrochureList({ brochures }: BrochureListProps) {
       console.error("Error toggling publish:", err);
     } finally {
       setTogglingPublish(null);
+    }
+  };
+
+  const handleDuplicate = async (brochure: Brochure) => {
+    setDuplicating(brochure.id);
+    try {
+      const res = await fetch(`/api/admin/brochures/${brochure.id}/duplicate`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to duplicate brochure");
+      }
+      const data = await res.json();
+      router.push(`/admin/brochures/${data.id}`);
+    } catch (err: any) {
+      console.error("Duplicate brochure failed:", err);
+      alert(err?.message || "Failed to duplicate brochure");
+    } finally {
+      setDuplicating(null);
     }
   };
 
@@ -400,6 +419,18 @@ export default function BrochureList({ brochures }: BrochureListProps) {
                     >
                       <Edit3 className="h-4 w-4" />
                     </Link>
+                    <button
+                      onClick={() => handleDuplicate(brochure)}
+                      disabled={duplicating === brochure.id}
+                      className="rounded-lg p-2 text-gray-400 hover:bg-white/10 hover:text-white transition-colors disabled:opacity-50"
+                      title="Duplicate"
+                    >
+                      {duplicating === brochure.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Copy className="h-4 w-4" />
+                      )}
+                    </button>
                     {/* Publish/Unpublish Toggle */}
                     <button
                       onClick={() => togglePublished(brochure)}
