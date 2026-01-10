@@ -24,6 +24,10 @@ export interface IBlogPost {
   publishedAt: string | null;
   readingTime: number;
   isFeatured: boolean;
+  isExternal: boolean;
+  externalUrl: string | null;
+  externalMeta: Record<string, any>;
+  siteOrigin?: string | null;
   author: {
     name: string;
     avatar: string;
@@ -109,6 +113,12 @@ class BlogPostMapper {
       publishedAt: post.published_at,
       readingTime: post.reading_time_minutes || 5,
       isFeatured: post.is_featured,
+      isExternal: post.is_external,
+      externalUrl: post.external_url,
+      externalMeta: post.external_meta || {},
+      siteOrigin:
+        (post.external_meta as any)?.wp?.siteOrigin ||
+        (post.external_url ? new URL(post.external_url).hostname : null),
       author: {
         name: post.author_name || "Bhukya Krishna",
         avatar: "/headshot-krishna.webp",
@@ -141,7 +151,7 @@ export class SupabaseBlogRepository implements IBlogRepository {
         `
         *,
         category:categories(*),
-        post_tags!inner(tag_id, tags(*))
+        post_tags(tag_id, tags(*))
       `,
         { count: "exact" }
       )
@@ -161,6 +171,23 @@ export class SupabaseBlogRepository implements IBlogRepository {
 
     if (featured !== undefined) {
       queryBuilder = queryBuilder.eq("is_featured", featured);
+    }
+
+    if (tagSlug) {
+      const { data: tag } = await supabase.from("tags").select("id").eq("slug", tagSlug).single();
+      if (tag?.id) {
+        const { data: postTags } = await supabase
+          .from("post_tags")
+          .select("post_id")
+          .eq("tag_id", tag.id);
+
+        const postIds = (postTags || []).map((pt: any) => pt.post_id).filter(Boolean);
+        if (postIds.length === 0) {
+          return { items: [], total: 0, page, perPage, totalPages: 0 };
+        }
+
+        queryBuilder = queryBuilder.in("id", postIds);
+      }
     }
 
     if (query) {

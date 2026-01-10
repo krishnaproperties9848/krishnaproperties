@@ -13,6 +13,9 @@ interface BlogPostData {
   excerpt?: string | null;
   featuredImage?: string | null;
   coverImage?: string | null;
+  isExternal?: boolean;
+  externalUrl?: string | null;
+  siteOrigin?: string | null;
   author: {
     name: string;
     avatar: string;
@@ -46,28 +49,71 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
   const imageUrl = post.featuredImage || post.coverImage;
   const categoryColor = post.category?.color || "#d4af37";
   const categoryName = post.category?.name || "Article";
+  const isExternal = Boolean(post.isExternal && post.externalUrl);
+  const href = isExternal ? (post.externalUrl as string) : `/insights/${post.slug}`;
+  const target = isExternal ? "_blank" : undefined;
+  const rel = isExternal ? "noopener noreferrer" : undefined;
+  const displayExcerpt =
+    post.excerpt ||
+    (isExternal
+      ? `External article${post.siteOrigin ? ` · ${post.siteOrigin}` : ""}`
+      : "Read more");
+
+  const renderImage = () => {
+    if (imageUrl) {
+      if (isExternal) {
+        // Use native img to bypass Next/Image domain restrictions for external sources
+        return (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt={post.title}
+            className="absolute inset-0 h-full w-full object-cover opacity-40 transition-all duration-500 group-hover:opacity-50 group-hover:scale-105"
+          />
+        );
+      }
+
+      return (
+        <Image
+          src={imageUrl}
+          alt={post.title}
+          fill
+          className="object-cover opacity-40 transition-all duration-500 group-hover:opacity-50 group-hover:scale-105"
+        />
+      );
+    }
+
+    // Gradient/initials fallback
+    const initials = post.title
+      .split(" ")
+      .map((w) => w[0])
+      .join("")
+      .slice(0, 3)
+      .toUpperCase();
+
+    return (
+      <div className="absolute inset-0 z-0 flex items-center justify-center bg-gradient-to-br from-neutral-800 via-neutral-900 to-black">
+        <span className="text-4xl font-bold text-gold/70">{initials || "WP"}</span>
+      </div>
+    );
+  };
 
   if (variant === "featured") {
     return (
       <Link
-        href={`/insights/${post.slug}`}
+        href={href}
+        target={target}
+        rel={rel}
         className={cn(
           "group relative flex flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-neutral-900 to-neutral-950 border border-gold/20 shadow-xl transition-all duration-500 hover:border-gold/50 hover:shadow-gold/20 hover:-translate-y-2",
           className
         )}
       >
         {/* Background Image */}
-        {imageUrl && (
-          <div className="absolute inset-0 z-0">
-            <Image
-              src={imageUrl}
-              alt={post.title}
-              fill
-              className="object-cover opacity-40 transition-all duration-500 group-hover:opacity-50 group-hover:scale-105"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/30" />
-          </div>
-        )}
+        <div className="absolute inset-0 z-0">
+          {renderImage()}
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-black/30" />
+        </div>
 
         {/* Decorative corner accent */}
         <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-gold/20 to-transparent z-[1]" />
@@ -94,7 +140,7 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
 
           {/* Excerpt */}
           <p className="mb-4 text-sm text-gray-300 line-clamp-3 leading-relaxed">
-            {post.excerpt}
+            {displayExcerpt}
           </p>
 
           {/* Author */}
@@ -120,6 +166,15 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
                 <BookOpen className="h-3.5 w-3.5" />
                 {post.readingTime || 5} min read
               </span>
+              {isExternal && (
+                <span className="rounded-full bg-gold/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-gold">
+                  External ↗
+                </span>
+              )}
+              <span className="flex items-center gap-1.5 text-gray-400">
+                <Clock className="h-3.5 w-3.5" />
+                {formattedDate}
+              </span>
               <span className="flex items-center gap-1.5 text-gold font-semibold group-hover:gap-2.5 transition-all">
                 Read Article <ArrowRight className="h-4 w-4" />
               </span>
@@ -133,7 +188,9 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
   if (variant === "compact") {
     return (
       <Link
-        href={`/insights/${post.slug}`}
+        href={href}
+        target={target}
+        rel={rel}
         className={cn(
           "group flex gap-4 rounded-xl p-3 transition-colors hover:bg-white/5",
           className
@@ -141,12 +198,7 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
       >
         {imageUrl && (
           <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg">
-            <Image
-              src={imageUrl}
-              alt={post.title}
-              fill
-              className="object-cover"
-            />
+            {renderImage()}
           </div>
         )}
         <div className="flex-1 min-w-0">
@@ -164,7 +216,9 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
   // Default variant
   return (
     <Link
-      href={`/insights/${post.slug}`}
+      href={href}
+      target={target}
+      rel={rel}
       className={cn(
         "group relative flex flex-col overflow-hidden rounded-2xl bg-gradient-to-br from-neutral-900/80 to-neutral-950 border border-gold/10 shadow-lg transition-all duration-500 hover:border-gold/40 hover:shadow-gold/10 hover:-translate-y-1",
         className
@@ -173,12 +227,7 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
       {/* Image */}
       {imageUrl && (
         <div className="relative aspect-[16/10] w-full overflow-hidden">
-          <Image
-            src={imageUrl}
-            alt={post.title}
-            fill
-            className="object-cover transition-all duration-500 group-hover:scale-110"
-          />
+          {renderImage()}
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
           
           {/* Category badge on image */}
@@ -212,7 +261,7 @@ export function BlogCard({ post, variant = "default", className }: BlogCardProps
         </h3>
 
         {/* Excerpt */}
-        <p className="mb-4 text-sm text-gray-400 line-clamp-2 leading-relaxed">{post.excerpt}</p>
+        <p className="mb-4 text-sm text-gray-400 line-clamp-2 leading-relaxed">{displayExcerpt}</p>
 
         {/* Author & CTA */}
         <div className="mt-auto flex items-center justify-between border-t border-gold/10 pt-4">

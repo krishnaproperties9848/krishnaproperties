@@ -19,6 +19,22 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "mggemmpkqzwlvmypvygx.supabase.co",
       },
+      {
+        protocol: "https",
+        hostname: "img-s-msn-com.akamaized.net",
+      },
+      {
+        protocol: "https",
+        hostname: "static.toiimg.com",
+      },
+      {
+        protocol: "https",
+        hostname: "*.wp.com",
+      },
+      {
+        protocol: "https",
+        hostname: "indianexpress.com",
+      },
     ],
   },
 };

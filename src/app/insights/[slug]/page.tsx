@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Clock, Calendar, Eye, Phone, MessageCircle, ChevronRight } from "lucide-react";
@@ -46,6 +46,10 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
 
   if (!post) {
     notFound();
+  }
+
+  if (post.isExternal && post.externalUrl) {
+    redirect(post.externalUrl);
   }
 
   const relatedPosts = await repo.getRelatedPosts(post.id, post.category?.id || null, 3);

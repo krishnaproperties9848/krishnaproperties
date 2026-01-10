@@ -25,6 +25,7 @@ interface AdminSidebarProps {
 const navItems = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/posts", label: "Blog Posts", icon: FileText },
+  { href: "/admin/posts/import", label: "Import WordPress", icon: Link2 },
   { href: "/admin/brochures", label: "Brochures", icon: BookOpen },
   { href: "/admin/categories", label: "Categories", icon: FolderOpen },
   { href: "/admin/tags", label: "Tags", icon: Tag },

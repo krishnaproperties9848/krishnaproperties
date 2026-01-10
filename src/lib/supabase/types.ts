@@ -31,6 +31,9 @@ export interface Post {
   cover_image_url: string | null;
   category_id: string | null;
   is_featured: boolean;
+  is_external: boolean;
+  external_url: string | null;
+  external_meta: Record<string, any>;
   category?: Category;
   tags?: Tag[];
 }
